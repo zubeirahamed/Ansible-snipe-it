@@ -1,0 +1,87 @@
+---
+- name: Install SnipeIT
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Install Apache2
+      apt:
+        name: apache2
+        state: present
+
+    - name: Install MySQL Server
+      apt:
+        name: mysql-server
+        state: present
+
+    - name: Install PHP and required modules
+      apt:
+        name:
+          - php
+          - php-cli
+          - php-common
+          - php-curl
+          - php-gd
+          - php-json
+          - php-mbstring
+          - php-mysql
+          - php-xml
+          - libapache2-mod-php
+        state: present
+
+    - name: Download SnipeIT from Github repository
+      git:
+        repo: https://github.com/snipe/snipe-it.git
+        dest: /var/www/html/snipe-it
+
+    - name: Install Composer dependencies for SnipeIT
+      shell: |
+        cd /var/www/html/snipe-it/
+        composer install --no-dev --prefer-source
+
+    - name: Set permissions for SnipeIT directory and files
+      file:
+        path: /var/www/html/snipe-it/
+        owner: www-data
+        group: www-data
+        mode: '0755'
+        recurse: yes
+
+    - name: Create MySQL database for SnipeIT application
+      mysql_db:
+        name: snipeit_db
+        state: present
+
+    - name: Create MySQL user for SnipeIT application with privileges on snipeit_db database.
+      mysql_user:
+        name: snipeit_user
+        password: 123
+        priv: "snipeit_db.*:ALL"
+        host_all: yes
+
+    - name: Copy .env.example file to .env file for SnipeIT application configuration.
+      copy:
+        src: /var/www/html/snipe-it/.env.example
+        dest: /var/www/html/snipe-it/.env
+
+    - name: Configure .env file for SnipeIT application.
+      lineinfile:
+        path: /var/www/html/snipe-it/.env
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      with_items:
+        - { regexp:'^APP_URL=', line:'APP_URL=http://localhost' }
+        - { regexp:'^DB_HOST=', line:'DB_HOST=localhost' }
+        - { regexp:'^DB_DATABASE=', line:'DB_DATABASE=snipeit_db' }
+        - { regexp:'^DB_USERNAME=', line:'DB_USERNAME=snipeit_user' }
+        - { regexp:'^DB_PASSWORD=', line:'DB_PASSWORD=123' }
+
+    - name: Run database migrations for SnipeIT application.
+      shell:
+         cd /var/www/html/snipe-it/
+         php artisan migrate --force
+
+    - name : Restart Apache2 service.
+      service:
+         name : apache2 
+         state : restarted 
